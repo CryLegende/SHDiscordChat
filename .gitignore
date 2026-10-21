@@ -1,0 +1,13 @@
+# Maven
+target/
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+.vscode/
+out/
+
+# Sauvegardes locales
+backup-*/
+*.bak

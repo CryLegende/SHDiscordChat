@@ -1,0 +1,5 @@
+name: SHDiscordChat
+version: '${project.version}'
+main: org.Cry_Legende.sHDiscordChat.SHDiscordChat
+api-version: '1.20'
+author: Cry_Legende

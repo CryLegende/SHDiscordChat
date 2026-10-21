@@ -1,0 +1,8 @@
+discord:
+  webhook-url: "https://discord.com/api/webhooks/ID/CHANGE_ME"
+  name-format: "{grade} » {pseudo}"
+  startup-message: "```[Démarrage du serveur]```"
+  shutdown-message: "```[Arret du serveur]```"
+
+api:
+  avatar-url: "https://mineskin.eu/armor/bust/{player}/100.png"
