@@ -3,3 +3,5 @@ version: '${project.version}'
 main: org.Cry_Legende.sHDiscordChat.SHDiscordChat
 api-version: '1.20'
 author: Cry_Legende
+# Chargés avant : le relais du chat se branche sur ChatControl s'il est présent
+softdepend: [Vault, ChatControl]

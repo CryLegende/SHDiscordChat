@@ -1,9 +1,13 @@
 package org.Cry_Legende.sHDiscordChat;
 
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -13,6 +17,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +25,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 
 public class SHDiscordChat extends JavaPlugin implements Listener {
 
@@ -59,7 +65,7 @@ public class SHDiscordChat extends JavaPlugin implements Listener {
             return;
         }
         // Écouteur enregistré une fois Vault prêt : le chat est asynchrone et pourrait arriver avant (perms null)
-        getServer().getPluginManager().registerEvents(this, this);
+        registerChatRelay();
         started = true;
         webhookExecutor.execute(() -> sendServerMessage(startupMessage));
     }
@@ -106,13 +112,50 @@ public class SHDiscordChat extends JavaPlugin implements Listener {
         return perms != null;
     }
 
-    @EventHandler
-    public void onPlayerChat(AsyncPlayerChatEvent event) {
-        if (event.isCancelled()) {
-            return;
+    /**
+     * Branche le relais du chat. Avec ChatControl (canaux), on écoute son ChannelPostChatEvent : le message y a déjà
+     * passé mute, filtres et anti-spam, alors que le chat Bukkit part avant ces contrôles et relayait les messages
+     * bloqués. Sans ChatControl, on écoute le chat Bukkit en dernier, seulement s'il n'a pas été annulé.
+     * Écoute par réflexion : pas de dépendance de compilation sur ChatControl.
+     */
+    @SuppressWarnings("unchecked")
+    private void registerChatRelay() {
+        PluginManager pm = getServer().getPluginManager();
+        Plugin chatControl = pm.getPlugin("ChatControl");
+        if (chatControl != null && chatControl.isEnabled()) {
+            try {
+                Class<? extends Event> type = (Class<? extends Event>) Class.forName(
+                    "org.mineacademy.chatcontrol.api.ChannelPostChatEvent", true, chatControl.getClass().getClassLoader());
+                Method sender = type.getMethod("getSender");
+                Method text = type.getMethod("getMessage");
+                Method silent = type.getMethod("isCancelledSilently");
+                pm.registerEvent(type, this, EventPriority.MONITOR, (listener, event) -> {
+                    if (!type.isInstance(event)) return;
+                    try {
+                        // Annulé « en silence » : seul l'auteur voit son message (mute fantôme, anti-spam)
+                        if ((boolean) silent.invoke(event)) return;
+                        if (sender.invoke(event) instanceof Player player) {
+                            relay(player, (String) text.invoke(event));
+                        }
+                    } catch (ReflectiveOperationException e) {
+                        getLogger().log(Level.WARNING, "Lecture d'un message ChatControl impossible", e);
+                    }
+                }, this, true);
+                getLogger().info("Relais du chat branché sur ChatControl (après mute, filtres et anti-spam).");
+                return;
+            } catch (ReflectiveOperationException | ClassCastException e) {
+                getLogger().log(Level.WARNING, "API ChatControl introuvable, relais sur le chat Bukkit", e);
+            }
         }
-        Player player = event.getPlayer();
-        String message = event.getMessage();
+        pm.registerEvents(this, this);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerChat(AsyncPlayerChatEvent event) {
+        relay(event.getPlayer(), event.getMessage());
+    }
+
+    private void relay(Player player, String message) {
         String[] groups = perms.getPlayerGroups(player);
         String grade = groups.length > 0 ? groups[0] : "NoGroup";
         String formattedGrade = capitalizeFirstLetter(grade);
